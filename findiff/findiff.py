@@ -284,8 +284,24 @@ class _FinDiffUniformPeriodic(_FinDiffBase):
         xp = get_namespace(f)
 
         fd = xp.zeros_like(f)
+        numpy_array = (
+            type(f) is np.ndarray
+            and f.dtype.kind in "biufc"
+            and type(self.axis) is int
+        )
+        duplicate_input = numpy_array and f.ndim == 1 and f.size > 0
+        doubled = None
         for off, coef in zip(self.coefs["offsets"], self.coefs["coefficients"]):
-            fd = fd + coef * xp.roll(f, -off, axis=self.axis)
+            if numpy_array and isinstance(off, (int, np.integer)) and off == 0:
+                shifted = f
+            elif duplicate_input and (type(off) is int or isinstance(off, np.integer)):
+                shift = int(-off) % f.size
+                if doubled is None:
+                    doubled = np.concatenate((f, f))
+                shifted = doubled[f.size - shift : 2 * f.size - shift]
+            else:
+                shifted = xp.roll(f, -off, axis=self.axis)
+            fd = fd + coef * shifted
         h_inv = 1.0 / self.spacing**self.order
         return fd * h_inv
 
