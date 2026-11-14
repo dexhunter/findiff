@@ -1,0 +1,60 @@
+[
+  {
+    "upstream_repo": "maroba/findiff",
+    "head_sha": "038c34f95a847d65dd678ad28b47d8b184bc2fc5",
+    "file": "findiff/stencils.py",
+    "function": "StencilSet.apply_all",
+    "native_test_cmd": "python3 -m pytest",
+    "bench_cmd": "python3 osspr-intake/harness/stencil_apply_all.py",
+    "baseline_median_ms": 218.197644,
+    "baseline_noise_pct": 1.850015,
+    "tests_pass_on_baseline": true,
+    "workload": "200x200 grid, u=x^3+y^3, second-derivative Laplacian stencil from Diff(0)**2 + Diff(1)**2, time only apply_all",
+    "notes": "apply_all loops over every point in Python and rebuilds an index array per stencil weight. This is the same operator as the local-stencil tests in tests/test_findiff.py (those use n=70-100); at n=200 one call is 218 ms. Filling each characteristic region (interior, edge, corner) with slice updates, in the existing coefficient order, stays inside this function and should fall to a few milliseconds, in line with a vectorized Diff apply. Five runs: 219.710496, 218.197644, 217.143749, 218.703063, 215.673806 ms; noise is (max-min)/median. Overlap: no open upstream PRs. PRs merged since 2026-10-15 are #108 (grids.make_axis), #112 (non-uniform coef sizing), #113 (PDE.solve), #114 (TimeDependentPDE.solve), #115 (compact.py plus coefs/findiff/interface/operators), #116 (ivp/pde/coefs/findiff/operators/interface), #117 (backend.add_at), #118 (findiff.apply_to_array and shift_slice), and dependabot workflow bumps. None touch findiff/stencils.py. author:dexhunter repo:maroba/findiff is only #117 and #118. Open issues do not deprecate or move stencil application. Same-day commits only retouch add_at, apply_to_array, Diff.set_accuracy, and scalar subtraction."
+  },
+  {
+    "upstream_repo": "maroba/findiff",
+    "head_sha": "038c34f95a847d65dd678ad28b47d8b184bc2fc5",
+    "file": "findiff/stencils.py",
+    "function": "Stencil._system_matrix",
+    "native_test_cmd": "python3 -m pytest",
+    "bench_cmd": "python3 osspr-intake/harness/stencil_system_matrix.py",
+    "baseline_median_ms": 328.006353,
+    "baseline_noise_pct": 6.741524,
+    "tests_pass_on_baseline": true,
+    "workload": "Generic 5x5x5 (125-point) 3D Laplacian stencil; time only _system_matrix, which Stencil() runs once",
+    "notes": "Each candidate Taylor monomial calls np.linalg.matrix_rank on the whole growing matrix (LAPACK) from Python. For this 125-point stencil one _system_matrix call is 328 ms, and 415 rank calls are 97% of that. A factorization kept inside this function, accepting a row only when matrix_rank would, preserves the selected rows and therefore the coefficients, and drops the repeated full factorizations. tests/test_stencils.py constructs Stencil objects that all run this function. Five runs: 326.688064, 328.396186, 325.387244, 347.499872, 328.006353 ms; noise is (max-min)/median. Same overlap check as StencilSet.apply_all: stencils.py is outside every open PR, every PR merged in the last 30 days, and dexhunter's #117/#118."
+  },
+  {
+    "upstream_repo": "maroba/findiff",
+    "head_sha": "038c34f95a847d65dd678ad28b47d8b184bc2fc5",
+    "file": "findiff/vector.py",
+    "function": "Gradient.__call__",
+    "native_test_cmd": "python3 -m pytest",
+    "bench_cmd": "python3 osspr-intake/harness/gradient_peak_mem.py",
+    "metric_kind": "peak_memory_bytes",
+    "baseline_value": 42469832,
+    "baseline_noise_pct": 0.0,
+    "metric_benchmark": "python3 osspr-intake/harness/gradient_peak_mem.py",
+    "labeled_data": null,
+    "tests_pass_on_baseline": true,
+    "workload": "Gradient(h=(1,1,1), acc=2) on a seeded 96^3 float64 scalar field; tracemalloc peak of one call after warmup",
+    "notes": "The partials are stored in a Python list and then xp.stack'd, so every component stays live next to the stacked result, on top of the NumPy Diff applies (#118 already sped those up; this waste is the list plus stack). Peak is 42469832 bytes on five identical runs. Writing each partial into a preallocated NumPy output was bitwise equal (np.array_equal) and cut 7078688 bytes, one 96^3 component, above 1 MiB; JAX can keep the current stack. tests/test_vector.py covers Gradient. vector.py is not in any open PR or any PR merged since 2026-10-15 (#108, #112-#118 and dependabot), nor in dexhunter's PRs. Open issues do not deprecate Gradient."
+  },
+  {
+    "upstream_repo": "maroba/findiff",
+    "head_sha": "038c34f95a847d65dd678ad28b47d8b184bc2fc5",
+    "file": "findiff/utils.py",
+    "function": "extend_to_ND",
+    "native_test_cmd": "python3 -m pytest",
+    "bench_cmd": "python3 osspr-intake/harness/extend_to_nd_peak_mem.py",
+    "metric_kind": "peak_memory_bytes",
+    "baseline_value": 29956424,
+    "baseline_noise_pct": 0.0,
+    "metric_benchmark": "python3 osspr-intake/harness/extend_to_nd_peak_mem.py",
+    "labeled_data": null,
+    "tests_pass_on_baseline": true,
+    "workload": "Dense 32x32 line operator (the matrix compact Diff.matrix gets after inverting the implicit system) extended to a 32^3 grid along axis 0",
+    "notes": "extend_to_ND Kronecker-products with scipy.sparse.kron (C) one axis at a time, so the previous factor and kron's format-conversion buffers sit on top of the finished CSR. Traced peak is 29956424 bytes on five identical runs, versus about 12.7 MB stored in the result. Filling the CSR index and data arrays once reproduced the product exactly (sparse residual nnz 0) at about 13.7 MB peak on axis 0 and was faster there; the fill has to be vectorized along the long index so other axes do not regress, and that still fits in this function. tests/test_utils.py covers extend_to_ND; compact matrix() is the caller. utils.py is not touched by open PRs, by PRs merged in the last 30 days, or by dexhunter's #117/#118. Not marked deprecated or being moved."
+  }
+]
